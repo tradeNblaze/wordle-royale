@@ -1,0 +1,13 @@
+{
+  "name": "wordle-royale-live",
+  "version": "1.0.0",
+  "description": "Live multiplayer Wordle race - same word, same moment, first to solve wins.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {}
+}
