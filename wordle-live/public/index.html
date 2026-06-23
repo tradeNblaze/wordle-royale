@@ -104,6 +104,15 @@ input { font-family: inherit; }
 .seat-row .conn-pill { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-soft); }
 .seat-row .conn-pill.ok { background: var(--green); }
 .row-remove { width: 26px; height: 26px; min-width: 26px; border-radius: 50%; border: none; background: rgba(255,107,74,.15); color: var(--accent-soft); font-size: 14px; display: flex; align-items: center; justify-content: center; }
+.add-bot-row { display: flex; gap: 6px; margin-top: 4px; }
+.add-bot-btn {
+  flex: 1; background: transparent; border: 1.5px dashed rgba(255,107,74,.35); color: var(--accent-soft);
+  border-radius: 10px; padding: 9px 4px; font-weight: 600; font-size: 11.5px;
+}
+.difficulty-tag { font-family: var(--font-mono); font-size: 9px; padding: 1px 5px; border-radius: 5px; margin-left: 5px; text-transform: uppercase; }
+.difficulty-tag.easy { background: rgba(95,177,85,.2); color: var(--green-soft); }
+.difficulty-tag.medium { background: rgba(201,162,39,.2); color: var(--yellow-soft); }
+.difficulty-tag.hard { background: rgba(255,107,74,.2); color: var(--accent-soft); }
 .lobby-actions { display: flex; gap: 8px; margin-top: 14px; }
 .lobby-actions .btn { flex: 1; }
 
@@ -358,7 +367,11 @@ input { font-family: inherit; }
 
         <div class="section-label">Players (${players.length}/12)</div>
         ${players.map(p => renderLobbySeat(p)).join('')}
-        <button class="add-bot-btn" data-action="add-bot" style="width:100%;background:transparent;border:1.5px dashed rgba(255,107,74,.35);color:var(--accent-soft);border-radius:12px;padding:10px;font-weight:600;font-size:13.5px;margin-top:4px;">+ Add a Bot</button>
+        <div class="add-bot-row">
+          <button class="add-bot-btn" data-action="add-bot" data-difficulty="easy">+ Easy Bot</button>
+          <button class="add-bot-btn" data-action="add-bot" data-difficulty="medium">+ Medium Bot</button>
+          <button class="add-bot-btn" data-action="add-bot" data-difficulty="hard">+ Hard Bot</button>
+        </div>
 
         <div class="section-label">Round Settings</div>
         <div class="field-row" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
@@ -387,7 +400,7 @@ input { font-family: inherit; }
     const isMe = p.seatIndex === mySeatIndex;
     return `<div class="seat-row">
       <div class="avatar">${avatarInitial(p.name)}</div>
-      <div class="name">${escapeHtml(p.name)}${isMe ? '<span class="you-tag">YOU</span>' : ''}${p.isBot ? '<span class="you-tag">BOT</span>' : ''}</div>
+      <div class="name">${escapeHtml(p.name)}${isMe ? '<span class="you-tag">YOU</span>' : ''}${p.isBot ? `<span class="difficulty-tag ${p.difficulty || 'medium'}">${p.difficulty || 'medium'}</span>` : ''}</div>
       ${p.score ? `<span class="score-tag">${p.score} pts</span>` : ''}
       <div class="conn-pill ${p.connected ? 'ok' : ''}"></div>
       <button class="row-remove" data-action="remove-player" data-seat="${p.seatIndex}">✕</button>
@@ -624,7 +637,7 @@ input { font-family: inherit; }
         break;
 
       case 'remove-player': send({ type: 'remove_player', seatIndex: Number(target.dataset.seat) }); break;
-      case 'add-bot': send({ type: 'add_bot' }); break;
+      case 'add-bot': send({ type: 'add_bot', difficulty: target.dataset.difficulty }); break;
       case 'start-round': send({ type: 'start_round' }); break;
       case 'new-game': send({ type: 'new_game' }); break;
       case 'view-final-summary': ui.viewingFinalSummary = true; render(); break;
