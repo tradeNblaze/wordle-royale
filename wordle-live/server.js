@@ -4,6 +4,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { attachWebSocketServer } = require('./ws-server.js');
 const { evaluateGuess, isSolved } = require('./wordle-logic.js');
+const { pickBotGuess, botDelayMs } = require('./wordle-bot-ai.js');
 const { ANSWERS, GUESS_SET } = require('./words.js');
 
 const PORT = process.env.PORT || 3000;
@@ -102,6 +103,9 @@ function startRound(room) {
   room.pendingTimer = setTimeout(() => {
     try { endRound(room); } catch (err) { console.error('Round timeout error in room', room.code, err); }
   }, roundMs);
+  for (const p of activePlayers(room)) {
+    if (p.isBot) scheduleBotGuess(room, p);
+  }
   broadcast(room);
 }
 
@@ -161,14 +165,66 @@ function endRound(room) {
       return a.totalTimeMs - b.totalTimeMs;
     });
   }
+  clearBotTimers(room);
   broadcast(room);
+}
+
+// Core guess processing, shared by real players (via WS) and bots (via timer).
+// Returns null on success, or an error string.
+function processGuess(room, player, rawGuess) {
+  const st = room.playerStates[player.seatIndex];
+  if (!st) return 'no active board';
+  if (st.solved || st.finishedAt != null || st.guesses.length >= MAX_GUESSES) return 'already finished';
+
+  const guess = String(rawGuess || '').trim().toLowerCase();
+  if (guess.length !== WORD_LEN || !/^[a-z]+$/.test(guess)) return 'Guess must be a 5-letter word.';
+  if (!GUESS_SET.has(guess)) return "That's not in the word list.";
+
+  const result = evaluateGuess(guess, room.currentAnswer);
+  st.guesses.push({ guess, result });
+  if (isSolved(result)) {
+    st.solved = true;
+    st.finishedAt = Date.now();
+  } else if (st.guesses.length >= MAX_GUESSES) {
+    st.finishedAt = Date.now();
+  }
+  return null;
+}
+
+function scheduleBotGuess(room, player) {
+  const st = room.playerStates[player.seatIndex];
+  if (!st || st.solved || st.finishedAt != null || room.phase !== 'racing') return;
+  const history = st.guesses;
+  const { guess, candidateCount } = pickBotGuess(history, ANSWERS);
+  const delay = botDelayMs(history.length, candidateCount);
+  const timer = setTimeout(() => {
+    try {
+      if (room.phase !== 'racing') return;
+      const st2 = room.playerStates[player.seatIndex];
+      if (!st2 || st2.solved || st2.finishedAt != null) return;
+      processGuess(room, player, guess);
+      broadcast(room);
+      if (allFinished(room)) { endRound(room); return; }
+      scheduleBotGuess(room, player);
+    } catch (err) {
+      console.error('Bot guess error in room', room.code, err);
+    }
+  }, delay);
+  room.botTimers = room.botTimers || {};
+  room.botTimers[player.seatIndex] = timer;
+}
+
+function clearBotTimers(room) {
+  if (!room.botTimers) return;
+  for (const seat in room.botTimers) clearTimeout(room.botTimers[seat]);
+  room.botTimers = {};
 }
 
 // ===================== SERIALIZATION =====================
 function publicPlayerView(room, p) {
   const st = room.playerStates[p.seatIndex];
   const view = {
-    seatIndex: p.seatIndex, name: p.name, connected: !!p.connId,
+    seatIndex: p.seatIndex, name: p.name, isBot: !!p.isBot, connected: p.isBot ? true : !!p.connId,
     score: p.score || 0, totalGuesses: p.totalGuesses || 0, totalTimeMs: p.totalTimeMs || 0,
   };
   if (room.phase !== 'lobby' && st) {
@@ -242,6 +298,7 @@ async function handleMessage(connId, raw) {
       case 'new_game': return onNewGame(connId, msg);
       case 'submit_guess': return onSubmitGuess(connId, msg);
       case 'remove_player': return onRemovePlayer(connId, msg);
+      case 'add_bot': return onAddBot(connId, msg);
       case 'leave_room': return onLeaveRoom(connId, msg);
       case 'ping': return;
     }
@@ -285,7 +342,7 @@ function onJoinRoom(connId, msg) {
   // rejoin-by-name fallback if the round's already started and the token is gone
   const typedName = String(msg.name || '').trim().toLowerCase();
   if (typedName) {
-    const reclaimable = room.players.find(p => !p.connId && p.name.trim().toLowerCase() === typedName);
+    const reclaimable = room.players.find(p => !p.isBot && !p.connId && p.name.trim().toLowerCase() === typedName);
     if (reclaimable) {
       reclaimable.token = genToken();
       reclaimable.connId = connId;
@@ -343,6 +400,7 @@ function onNewGame(connId, msg) {
   const conn = connections.get(connId);
   const room = rooms.get(conn.roomCode);
   if (!room || !room.gameOver) return;
+  clearBotTimers(room);
   room.roundNumber = 0;
   room.gameOver = false;
   room.lastRoundResults = null;
@@ -359,26 +417,10 @@ function onSubmitGuess(connId, msg) {
   if (!room || room.phase !== 'racing') return;
   const player = findPlayerBySeat(room, conn.seatIndex);
   if (!player) return;
-  const st = room.playerStates[player.seatIndex];
-  if (!st) return;
-  if (st.solved || st.finishedAt != null || st.guesses.length >= MAX_GUESSES) return;
 
-  const guess = String(msg.guess || '').trim().toLowerCase();
-  if (guess.length !== WORD_LEN || !/^[a-z]+$/.test(guess)) {
-    return sendError(conn.ws, 'Guess must be a 5-letter word.');
-  }
-  if (!GUESS_SET.has(guess)) {
-    return sendError(conn.ws, "That's not in the word list.");
-  }
-
-  const result = evaluateGuess(guess, room.currentAnswer);
-  st.guesses.push({ guess, result });
-  if (isSolved(result)) {
-    st.solved = true;
-    st.finishedAt = Date.now();
-  } else if (st.guesses.length >= MAX_GUESSES) {
-    st.finishedAt = Date.now();
-  }
+  const err = processGuess(room, player, msg.guess);
+  if (err && err !== 'already finished' && err !== 'no active board') return sendError(conn.ws, err);
+  if (err) return;
 
   broadcast(room);
   if (allFinished(room)) endRound(room);
@@ -389,6 +431,18 @@ function onRemovePlayer(connId, msg) {
   const room = rooms.get(conn.roomCode);
   if (!room || room.phase !== 'lobby') return;
   room.players = room.players.filter(p => p.seatIndex !== msg.seatIndex);
+  broadcast(room);
+}
+
+function onAddBot(connId, msg) {
+  const conn = connections.get(connId);
+  const room = rooms.get(conn.roomCode);
+  if (!room || room.phase !== 'lobby') return;
+  if (activePlayers(room).length >= MAX_PLAYERS) return sendError(conn.ws, 'This room is full.');
+  const seatIndex = nextSeatIndex(room);
+  const botNames = ['Rex', 'Nova', 'Echo', 'Sable', 'Jett', 'Lucky', 'Diesel', 'Spark'];
+  const name = 'Bot ' + botNames[seatIndex % botNames.length];
+  room.players.push({ seatIndex, name, isBot: true, token: null, connId: null, score: 0, totalGuesses: 0, totalTimeMs: 0, removed: false });
   broadcast(room);
 }
 
@@ -414,6 +468,7 @@ function maybeCleanupRoom(room) {
   const anyoneConnected = room.players.some(p => p.connId);
   if (!anyoneConnected) {
     clearPendingTimer(room);
+    clearBotTimers(room);
     rooms.delete(room.code);
   }
 }
@@ -452,6 +507,7 @@ setInterval(() => {
     const anyoneConnected = room.players.some(p => p.connId);
     if (!anyoneConnected && now - room.lastActivity > 5 * 60 * 1000) {
       clearPendingTimer(room);
+      clearBotTimers(room);
       rooms.delete(code);
     }
   }
