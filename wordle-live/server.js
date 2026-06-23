@@ -195,8 +195,8 @@ function scheduleBotGuess(room, player) {
   const st = room.playerStates[player.seatIndex];
   if (!st || st.solved || st.finishedAt != null || room.phase !== 'racing') return;
   const history = st.guesses;
-  const { guess, candidateCount } = pickBotGuess(history, ANSWERS);
-  const delay = botDelayMs(history.length, candidateCount);
+  const { guess, candidateCount } = pickBotGuess(history, ANSWERS, player.difficulty);
+  const delay = botDelayMs(history.length, candidateCount, player.difficulty);
   const timer = setTimeout(() => {
     try {
       if (room.phase !== 'racing') return;
@@ -224,7 +224,7 @@ function clearBotTimers(room) {
 function publicPlayerView(room, p) {
   const st = room.playerStates[p.seatIndex];
   const view = {
-    seatIndex: p.seatIndex, name: p.name, isBot: !!p.isBot, connected: p.isBot ? true : !!p.connId,
+    seatIndex: p.seatIndex, name: p.name, isBot: !!p.isBot, difficulty: p.difficulty || null, connected: p.isBot ? true : !!p.connId,
     score: p.score || 0, totalGuesses: p.totalGuesses || 0, totalTimeMs: p.totalTimeMs || 0,
   };
   if (room.phase !== 'lobby' && st) {
@@ -439,10 +439,11 @@ function onAddBot(connId, msg) {
   const room = rooms.get(conn.roomCode);
   if (!room || room.phase !== 'lobby') return;
   if (activePlayers(room).length >= MAX_PLAYERS) return sendError(conn.ws, 'This room is full.');
+  const difficulty = ['easy', 'medium', 'hard'].includes(msg.difficulty) ? msg.difficulty : 'medium';
   const seatIndex = nextSeatIndex(room);
   const botNames = ['Rex', 'Nova', 'Echo', 'Sable', 'Jett', 'Lucky', 'Diesel', 'Spark'];
   const name = 'Bot ' + botNames[seatIndex % botNames.length];
-  room.players.push({ seatIndex, name, isBot: true, token: null, connId: null, score: 0, totalGuesses: 0, totalTimeMs: 0, removed: false });
+  room.players.push({ seatIndex, name, isBot: true, difficulty, token: null, connId: null, score: 0, totalGuesses: 0, totalTimeMs: 0, removed: false });
   broadcast(room);
 }
 
