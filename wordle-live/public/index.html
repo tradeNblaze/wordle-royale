@@ -220,7 +220,7 @@ input { font-family: inherit; }
   let pub = null;
   let you = null;
   let landing = { mode: 'choose', name: '', roomCodeInput: '', error: '' };
-  let ui = { showLeaderboard: false, confirmLeave: false, currentGuess: '', shakeRow: -1, joinPending: false };
+  let ui = { showLeaderboard: false, confirmLeave: false, currentGuess: '', shakeRow: -1, joinPending: false, viewingFinalSummary: false };
 
   function loadSession() {
     try { return JSON.parse(localStorage.getItem('wr_session') || 'null'); } catch (e) { return null; }
@@ -271,6 +271,7 @@ input { font-family: inherit; }
       const prevPhase = pub ? pub.phase : null;
       pub = msg;
       if (prevPhase !== 'racing' && pub.phase === 'racing') ui.currentGuess = '';
+      if (!pub.gameOver) { ui.viewingFinalSummary = false; }
       render();
     } else if (msg.type === 'you') {
       you = msg;
@@ -503,8 +504,11 @@ input { font-family: inherit; }
   }
 
   function renderRoundOver() {
-    if (pub.gameOver) return renderGameSummary();
+    if (pub.gameOver && ui.viewingFinalSummary) return renderGameSummary();
     const results = pub.lastRoundResults || [];
+    const mainAction = pub.gameOver
+      ? `<button class="btn btn-accent btn-block" data-action="view-final-summary">See Final Standings</button>`
+      : `<button class="btn btn-accent btn-block" data-action="start-round">Start Next Round</button>`;
     return `<div class="roundover-wrap fade-up">
       <div class="answer-reveal">
         <div class="answer-label">The Word Was</div>
@@ -518,7 +522,7 @@ input { font-family: inherit; }
           <div class="result-points">+${r.points}</div>
         </div>`).join('')}
       </div>
-      <button class="btn btn-accent btn-block" data-action="start-round">Start Next Round</button>
+      ${mainAction}
       <button class="btn btn-ghost btn-block" style="margin-top:8px;" data-action="ask-leave">Leave Room</button>
     </div>`;
   }
@@ -623,6 +627,7 @@ input { font-family: inherit; }
       case 'add-bot': send({ type: 'add_bot' }); break;
       case 'start-round': send({ type: 'start_round' }); break;
       case 'new-game': send({ type: 'new_game' }); break;
+      case 'view-final-summary': ui.viewingFinalSummary = true; render(); break;
 
       case 'kb-letter': typeLetter(target.dataset.letter); break;
       case 'kb-back': backspace(); break;
