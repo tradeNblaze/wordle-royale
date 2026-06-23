@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Wordle Royale — Live</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -29,16 +29,17 @@
   --font-mono: 'JetBrains Mono', monospace;
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; }
+html, body { margin: 0; padding: 0; touch-action: manipulation; }
 body {
   background: radial-gradient(circle at 50% -10%, #21242e 0%, var(--bg) 60%);
   color: var(--ink);
   font-family: var(--font-body);
   min-height: 100vh;
   -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
-#app { max-width: 480px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; position: relative; }
-button { font-family: inherit; cursor: pointer; }
+#app { max-width: 480px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; position: relative; touch-action: manipulation; }
+button { font-family: inherit; cursor: pointer; touch-action: manipulation; }
 input { font-family: inherit; }
 ::selection { background: var(--accent-soft); color: #1a0d08; }
 
@@ -356,6 +357,7 @@ input { font-family: inherit; }
 
         <div class="section-label">Players (${players.length}/12)</div>
         ${players.map(p => renderLobbySeat(p)).join('')}
+        <button class="add-bot-btn" data-action="add-bot" style="width:100%;background:transparent;border:1.5px dashed rgba(255,107,74,.35);color:var(--accent-soft);border-radius:12px;padding:10px;font-weight:600;font-size:13.5px;margin-top:4px;">+ Add a Bot</button>
 
         <div class="section-label">Round Settings</div>
         <div class="field-row" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
@@ -384,7 +386,7 @@ input { font-family: inherit; }
     const isMe = p.seatIndex === mySeatIndex;
     return `<div class="seat-row">
       <div class="avatar">${avatarInitial(p.name)}</div>
-      <div class="name">${escapeHtml(p.name)}${isMe ? '<span class="you-tag">YOU</span>' : ''}</div>
+      <div class="name">${escapeHtml(p.name)}${isMe ? '<span class="you-tag">YOU</span>' : ''}${p.isBot ? '<span class="you-tag">BOT</span>' : ''}</div>
       ${p.score ? `<span class="score-tag">${p.score} pts</span>` : ''}
       <div class="conn-pill ${p.connected ? 'ok' : ''}"></div>
       <button class="row-remove" data-action="remove-player" data-seat="${p.seatIndex}">✕</button>
@@ -618,6 +620,7 @@ input { font-family: inherit; }
         break;
 
       case 'remove-player': send({ type: 'remove_player', seatIndex: Number(target.dataset.seat) }); break;
+      case 'add-bot': send({ type: 'add_bot' }); break;
       case 'start-round': send({ type: 'start_round' }); break;
       case 'new-game': send({ type: 'new_game' }); break;
 
